@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import '../models/transaction.dart';
 import '../models/upcoming.dart';
 import '../state/expense_store.dart';
 import '../utils/format.dart';
 import 'account_style_picker.dart';
+import 'accounts_sheet.dart';
 import 'ui.dart';
 
 Future<void> showUpcomingSheet(BuildContext context, ExpenseStore store) {
@@ -19,7 +20,6 @@ Future<void> showUpcomingSheet(BuildContext context, ExpenseStore store) {
 
 class _UpcomingSheet extends StatelessWidget {
   const _UpcomingSheet({required this.store});
-
   final ExpenseStore store;
 
   @override
@@ -59,60 +59,104 @@ class _UpcomingSheet extends StatelessWidget {
 
 class _UpcomingTile extends StatelessWidget {
   const _UpcomingTile({required this.store, required this.upcoming});
-
   final ExpenseStore store;
   final Upcoming upcoming;
+
+  String get _accountName {
+    for (final a in store.accounts) {
+      if (a.id == upcoming.accountId) return a.name;
+    }
+    return 'No account';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final u = upcoming;
+    final today = DateTime.now();
+    final overdue = u.dueDate.isBefore(
+      DateTime(today.year, today.month, today.day),
+    );
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Row(
+      child: Column(
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: u.category.color.withValues(alpha: 0.18),
-            child: Icon(u.category.icon, color: u.category.color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  u.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 19,
+                backgroundColor: u.category.color.withValues(alpha: 0.18),
+                child: Icon(u.category.icon, color: u.category.color, size: 19),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      u.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'From $_accountName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      overdue
+                          ? 'Overdue · ${formatDay(u.dueDate)}'
+                          : 'Due ${formatDay(u.dueDate)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: overdue ? scheme.error : scheme.onSurfaceVariant,
+                        fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'Due ${formatDay(u.dueDate)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                formatRupees(u.amountPaise / 100),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.error,
+                  visualDensity: VisualDensity.compact,
                 ),
-              ],
-            ),
-          ),
-          Text(
-            formatRupees(u.amountPaise / 100),
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          IconButton(
-            tooltip: 'Delete',
-            onPressed: () => store.removeUpcoming(u.id),
-            icon: const Icon(Icons.delete_outline_rounded, size: 20),
-          ),
-          FilledButton.tonal(
-            onPressed: () => openPaidFrom(context, store, u),
-            child: const Text('Paid'),
+                onPressed: () => store.removeUpcoming(u.id),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('Delete'),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => openPaidFrom(context, store, u),
+                child: const Text('Paid'),
+              ),
+            ],
           ),
         ],
       ),
@@ -134,7 +178,6 @@ void openPaidFrom(BuildContext context, ExpenseStore store, Upcoming u) {
 
 class _PaidFromSheet extends StatefulWidget {
   const _PaidFromSheet({required this.store, required this.upcoming});
-
   final ExpenseStore store;
   final Upcoming upcoming;
 
@@ -165,8 +208,7 @@ class _PaidFromSheetState extends State<_PaidFromSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final scheme = Theme.of(context).colorScheme;
     final u = widget.upcoming;
     return SheetFrame(
       title: 'Paid from',
@@ -177,40 +219,12 @@ class _PaidFromSheetState extends State<_PaidFromSheet> {
           for (final a in widget.store.accounts)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: Material(
-                color: _accountId == a.id
-                    ? scheme.primaryContainer.withValues(alpha: 0.6)
-                    : scheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(22),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(22),
-                  onTap: () => setState(() => _accountId = a.id),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    child: Row(
-                      children: [
-                        AccountAvatar(styleKey: a.styleKey, radius: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            a.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        Text(formatRupees(widget.store.balanceNow(a.id) / 100)),
-                        const SizedBox(width: 10),
-                        Icon(
-                          _accountId == a.id
-                              ? Icons.check_circle_rounded
-                              : Icons.radio_button_unchecked_rounded,
-                          color: _accountId == a.id
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              child: _AccountChoice(
+                name: a.name,
+                styleKey: a.styleKey,
+                balancePaise: widget.store.balanceNow(a.id),
+                selected: _accountId == a.id,
+                onTap: () => setState(() => _accountId = a.id),
               ),
             ),
           const SizedBox(height: 8),
@@ -222,6 +236,75 @@ class _PaidFromSheetState extends State<_PaidFromSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Reusable account row: icon, name, live balance, selected tick.
+class _AccountChoice extends StatelessWidget {
+  const _AccountChoice({
+    required this.name,
+    required this.styleKey,
+    required this.balancePaise,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String name;
+  final String styleKey;
+  final int balancePaise;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? scheme.primaryContainer.withValues(alpha: 0.6)
+          : scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            children: [
+              AccountAvatar(styleKey: styleKey, radius: 18),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      'Balance ${formatRupees(balancePaise / 100)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 20,
+                color: selected ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -241,7 +324,6 @@ void _openAdd(BuildContext context, ExpenseStore store) {
 
 class _AddUpcomingSheet extends StatefulWidget {
   const _AddUpcomingSheet({required this.store});
-
   final ExpenseStore store;
 
   @override
@@ -249,29 +331,44 @@ class _AddUpcomingSheet extends StatefulWidget {
 }
 
 class _AddUpcomingSheetState extends State<_AddUpcomingSheet> {
+  final _formKey = GlobalKey<FormState>();
   late final TextEditingController _title;
   late final TextEditingController _amount;
   DateTime _due = DateTime.now().add(const Duration(days: 7));
   Category _category = Category.bills;
-  late String? _accountId;
+  String? _accountId;
 
   @override
   void initState() {
     super.initState();
     _title = TextEditingController();
     _amount = TextEditingController();
-    final store = widget.store;
     _accountId =
-        store.focusAccount?.id ??
-        (store.accounts.isEmpty ? null : store.accounts.first.id);
+        widget.store.focusAccount?.id ??
+        (widget.store.accounts.isEmpty ? null : widget.store.accounts.first.id);
+    widget.store.addListener(_syncAccount);
+  }
+
+  /// Keeps a valid account picked, even if one is created from this sheet.
+  void _syncAccount() {
+    if (!mounted) return;
+    final ids = widget.store.accounts.map((a) => a.id).toList();
+    if (!ids.contains(_accountId)) {
+      setState(() => _accountId = ids.isEmpty ? null : ids.first);
+    } else {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    widget.store.removeListener(_syncAccount);
     _title.dispose();
     _amount.dispose();
     super.dispose();
   }
+
+  int get _paise => ((double.tryParse(_amount.text.trim()) ?? 0) * 100).round();
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -284,17 +381,17 @@ class _AddUpcomingSheetState extends State<_AddUpcomingSheet> {
   }
 
   void _save() {
-    final title = _title.text.trim();
-    final rupees = double.tryParse(_amount.text.trim()) ?? 0;
-    if (title.isEmpty || rupees <= 0 || _accountId == null) {
-      showAppToast(context, message: 'Add a title and a valid amount');
+    if (!_formKey.currentState!.validate()) return;
+    if (_accountId == null) {
+      showAppToast(context, message: 'Choose the account to pay from');
       return;
     }
+    final title = _title.text.trim();
     widget.store.addUpcoming(
       Upcoming(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         title: title,
-        amountPaise: (rupees * 100).round(),
+        amountPaise: _paise,
         dueDate: _due,
         accountId: _accountId!,
         category: _category,
@@ -306,74 +403,181 @@ class _AddUpcomingSheetState extends State<_AddUpcomingSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final store = widget.store;
+    final accounts = store.accounts;
+    final today = DateTime.now();
+
     return SheetFrame(
       title: 'Upcoming payment',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _title,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(
-              labelText: 'What is it for?',
-              hintText: 'Rent, EMI, electricity',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+      subtitle: 'Plan a bill or EMI before you pay it.',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _title,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'What is it for?',
+                hintText: 'Rent, EMI, electricity',
               ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _amount,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Amount',
-              prefixText: '₹ ',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _amount,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
               ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
+              onChanged: (_) => setState(() {}),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: '₹ ',
+              ),
+              validator: (v) {
+                final n = double.tryParse(v?.trim() ?? '');
+                if (n == null || n <= 0) return 'Enter a valid amount';
+                return null;
+              },
             ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final c in Category.values)
-                if (c != Category.salary)
-                  ChoiceChip(
-                    avatar: Icon(c.icon, size: 18, color: c.color),
-                    label: Text(c.label),
-                    selected: _category == c,
-                    onSelected: (_) => setState(() => _category = c),
-                  ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final a in store.accounts)
-                ChoiceChip(
-                  avatar: AccountAvatar(styleKey: a.styleKey, radius: 10),
-                  label: Text(a.name),
-                  selected: _accountId == a.id,
-                  onSelected: (_) => setState(() => _accountId = a.id),
+            const SizedBox(height: 18),
+
+            // ---- From which account ----
+            _label('From which account'),
+            if (accounts.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(18),
                 ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _pickDate,
-            icon: const Icon(Icons.event_rounded, size: 18),
-            label: Text('Due ${formatDay(_due)}'),
-          ),
-          const SizedBox(height: 20),
-          FilledButton(onPressed: _save, child: const Text('Add')),
-        ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'No account yet. Add one so this bill is tied to a balance.',
+                      style: TextStyle(color: scheme.onErrorContainer),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.tonalIcon(
+                      onPressed: () => showAccountEditor(context, store),
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Add account'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              for (final a in accounts)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _AccountChoice(
+                    name: a.name,
+                    styleKey: a.styleKey,
+                    balancePaise: store.balanceNow(a.id),
+                    selected: _accountId == a.id,
+                    onTap: () => setState(() => _accountId = a.id),
+                  ),
+                ),
+            if (accounts.isNotEmpty &&
+                _accountId != null &&
+                _paise > store.balanceNow(_accountId!))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Heads up: this is more than the current balance.',
+                  style: TextStyle(color: scheme.error, fontSize: 12),
+                ),
+              ),
+
+            const SizedBox(height: 10),
+            _label('Category'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final c in Category.values)
+                  if (c != Category.salary)
+                    ChoiceChip(
+                      avatar: Icon(c.icon, size: 18, color: c.color),
+                      label: Text(c.label),
+                      selected: _category == c,
+                      selectedColor: c.color.withValues(alpha: 0.25),
+                      onSelected: (_) => setState(() => _category = c),
+                    ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+            _label('Due date'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _dueChip(
+                  'Tomorrow',
+                  DateTime(today.year, today.month, today.day + 1),
+                ),
+                _dueChip(
+                  'In 7 days',
+                  DateTime(today.year, today.month, today.day + 7),
+                ),
+                _dueChip(
+                  'Next month',
+                  DateTime(today.year, today.month + 1, today.day),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _pickDate,
+              icon: const Icon(Icons.event_rounded, size: 18),
+              label: Text('Due ${formatDay(_due)}'),
+            ),
+
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: accounts.isEmpty ? null : _save,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: Text('Add upcoming payment'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _dueChip(String text, DateTime date) {
+    final selected =
+        _due.year == date.year &&
+        _due.month == date.month &&
+        _due.day == date.day;
+    return ChoiceChip(
+      label: Text(text),
+      selected: selected,
+      onSelected: (_) => setState(() => _due = date),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      text,
+      style: Theme.of(
+        context,
+      ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+    ),
+  );
 }
