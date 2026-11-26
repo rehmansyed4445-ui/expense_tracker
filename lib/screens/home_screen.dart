@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
-
 import '../models/transaction.dart';
 import '../models/upcoming.dart';
 import '../state/expense_store.dart';
 import '../utils/format.dart';
-import '../widgets/app_backdrop.dart';
 import '../widgets/budgets.dart';
 import '../widgets/premium_bottom_bar.dart';
 import '../widgets/profile_drawer.dart';
 import '../widgets/quick_add.dart';
 import '../widgets/upcoming_sheet.dart';
-// ... [previous imports] ...
 import 'dashboard_view.dart';
 import 'reports_view.dart';
 
+/// Home and Reports sit side by side and follow the finger.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.store});
   final ExpenseStore store;
@@ -25,6 +23,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// 0 = Home, 1 = Reports.
   late final AnimationController _pos = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 320),
@@ -54,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _onDragEnd(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
+    // Right swipe on Home opens the profile drawer.
     if (_pos.value <= 0 && v > 300) {
       _scaffoldKey.currentState?.openDrawer();
       _goTo(0);
@@ -68,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen>
     _goTo(target);
   }
 
+  /// First upcoming payment due within 3 days that the user hasn't closed.
   Upcoming? _dueSoon(ExpenseStore store) {
     final limit = DateTime.now().add(const Duration(days: 3));
     for (final u in store.upcoming) {
@@ -89,6 +91,8 @@ class _HomeScreenState extends State<HomeScreen>
         }
         return Scaffold(
           key: _scaffoldKey,
+          // Plain, clean background. No dotted backdrop anywhere.
+          backgroundColor: Theme.of(context).colorScheme.surface,
           drawer: ProfileDrawer(
             store: store,
             hostContext: context,
@@ -96,38 +100,37 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           body: Stack(
             children: [
-              const Positioned.fill(child: AppBackdrop()),
-              SafeArea(
-                bottom: false,
-                child: LayoutBuilder(
-                  builder: (context, c) {
-                    _width = c.maxWidth;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onHorizontalDragStart: _onDragStart,
-                      onHorizontalDragUpdate: _onDragUpdate,
-                      onHorizontalDragEnd: _onDragEnd,
-                      child: ClipRect(
-                        child: AnimatedBuilder(
-                          animation: _pos,
-                          builder: (context, _) {
-                            final t = _pos.value.clamp(0.0, 1.0).toDouble();
-                            final w = _width;
-                            return Stack(
-                              children: [
-                                // FIXED: DashboardView instead of duplicate ReportsView
-                                Positioned.fill(
-                                  child: Transform.translate(
-                                    offset: Offset(-t * w, 0),
-                                    child: DashboardView(
-                                      store: store,
-                                      onOpenReports: () => _goTo(1),
-                                    ),
+              LayoutBuilder(
+                builder: (context, c) {
+                  _width = c.maxWidth;
+                  return GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: _onDragStart,
+                    onHorizontalDragUpdate: _onDragUpdate,
+                    onHorizontalDragEnd: _onDragEnd,
+                    child: ClipRect(
+                      child: AnimatedBuilder(
+                        animation: _pos,
+                        builder: (context, _) {
+                          final t = _pos.value.clamp(0.0, 1.0).toDouble();
+                          final w = _width;
+                          return Stack(
+                            children: [
+                              // FIXED: This was a duplicate ReportsView before.
+                              Positioned.fill(
+                                child: Transform.translate(
+                                  offset: Offset(-t * w, 0),
+                                  child: DashboardView(
+                                    store: store,
+                                    onOpenReports: () => _goTo(1),
                                   ),
                                 ),
-                                Positioned.fill(
-                                  child: Transform.translate(
-                                    offset: Offset((1 - t) * w, 0),
+                              ),
+                              Positioned.fill(
+                                child: Transform.translate(
+                                  offset: Offset((1 - t) * w, 0),
+                                  child: SafeArea(
+                                    bottom: false,
                                     child: Column(
                                       children: [
                                         _ReportsTopBar(onBack: () => _goTo(0)),
@@ -138,14 +141,14 @@ class _HomeScreenState extends State<HomeScreen>
                                     ),
                                   ),
                                 ),
-                              ],
-                            );
-                          },
-                        ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
               Positioned(
                 left: 0,

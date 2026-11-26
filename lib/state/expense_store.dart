@@ -1,22 +1,17 @@
-import 'package:flutter/foundation.dart' show ChangeNotifier;
-
+import 'package:flutter/foundation.dart' show ChangeNotifier, debugPrint;
 import '../models/account.dart';
 import '../models/transaction.dart';
 import '../models/upcoming.dart';
 import '../services/storage.dart';
 
-import 'package:flutter/foundation.dart' show ChangeNotifier, debugPrint;
-
 class DayTotal {
   const DayTotal(this.day, this.expensePaise);
-
   final DateTime day;
   final int expensePaise;
 }
 
 class SpendGroup {
   const SpendGroup(this.label, this.category, this.paise);
-
   final String label;
   final Category category;
   final int paise;
@@ -38,7 +33,6 @@ class ExpenseStore extends ChangeNotifier {
   String? _selectedAccountId;
 
   // ---------- Basics ----------
-
   bool get isLoaded => _loaded;
   DateTime get month => _month;
   bool get isCurrentMonth => _sameMonth(_month, DateTime.now());
@@ -49,25 +43,25 @@ class ExpenseStore extends ChangeNotifier {
     try {
       _all = await _storage.load();
     } catch (e, s) {
-      debugPrint('Could not read transactions: $e\n$s'); // FIXED: Added \n
+      debugPrint('Could not read transactions: $e\n$s');
       _all = [];
     }
     try {
       _accounts = await _storage.loadAccounts();
     } catch (e, s) {
-      debugPrint('Could not read accounts: $e\n$s'); // FIXED
+      debugPrint('Could not read accounts: $e\n$s');
       _accounts = [];
     }
     try {
       _upcoming = await _storage.loadUpcoming();
     } catch (e, s) {
-      debugPrint('Could not read upcoming payments: $e\n$s'); // FIXED
+      debugPrint('Could not read upcoming payments: $e\n$s');
       _upcoming = [];
     }
     try {
       _budgets = await _storage.loadBudgets();
     } catch (e, s) {
-      debugPrint('Could not read budgets: $e\n$s'); // FIXED
+      debugPrint('Could not read budgets: $e\n$s');
       _budgets = {};
     }
     _sortNewestFirst();
@@ -76,7 +70,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Accounts and scope ----------
-
   List<Account> get accounts => List.unmodifiable(_accounts);
   bool get hasAccounts => _accounts.isNotEmpty;
 
@@ -113,7 +106,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Balances ----------
-
   /// Balance of one account as of [until]. Transfers move money between accounts.
   int balanceAt(String accountId, DateTime until) {
     final account = _accountById(accountId);
@@ -197,7 +189,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Month and totals ----------
-
   List<Transaction> get monthTransactions =>
       _all.where((t) => _sameMonth(t.date, _month) && _inScope(t)).toList();
 
@@ -221,7 +212,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Reports ----------
-
   /// Expense totals per category for the selected month, largest first.
   Map<Category, int> get expenseByCategory {
     final totals = <Category, int>{};
@@ -281,14 +271,12 @@ class ExpenseStore extends ChangeNotifier {
         .where((t) => t.type == TxType.expense && _inScope(t))
         .toList();
     if (spends.isEmpty) return [];
-
     final first = spends
         .map((t) => DateTime(t.date.year, t.date.month, t.date.day))
         .reduce((a, b) => a.isBefore(b) ? a : b);
     final span = today.difference(first).inDays + 1;
     final count = span > maxDays ? maxDays : span;
     final start = DateTime(today.year, today.month, today.day - (count - 1));
-
     return List.generate(count, (i) {
       final day = DateTime(start.year, start.month, start.day + i);
       final total = spends
@@ -304,7 +292,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Transactions ----------
-
   Future<void> add(Transaction t) async {
     _all.add(t);
     _sortNewestFirst();
@@ -328,7 +315,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Upcoming payments ----------
-
   List<Upcoming> get upcoming {
     final list = List.of(_upcoming)
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
@@ -377,9 +363,7 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Budgets ----------
-
   Map<String, int> get budgets => Map.unmodifiable(_budgets);
-
   int? budgetFor(String label) => _budgets[label];
 
   int spentFor(String label) => _sumType(
@@ -399,7 +383,6 @@ class ExpenseStore extends ChangeNotifier {
   }
 
   // ---------- Helpers ----------
-
   void _sortNewestFirst() => _all.sort((a, b) => b.date.compareTo(a.date));
 
   Future<void> _persistTransactions() => _storage.save(List.of(_all));

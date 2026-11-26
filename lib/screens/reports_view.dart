@@ -6,7 +6,6 @@ import '../state/expense_store.dart';
 import '../utils/format.dart';
 import '../widgets/category_donut.dart';
 import '../widgets/month_switcher.dart';
-import '../widgets/profile_drawer.dart';
 import '../widgets/section_card.dart';
 import '../widgets/transaction_tile.dart';
 import '../widgets/week_bar_chart.dart';
@@ -25,12 +24,6 @@ class ReportsView extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
-        const SliverToBoxAdapter(
-          child: ScreenHeader(
-            title: 'Reports',
-            subtitle: 'Your spending, in detail.',
-          ),
-        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.only(top: 12),

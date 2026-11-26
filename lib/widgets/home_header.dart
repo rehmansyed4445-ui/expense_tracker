@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
 import '../state/expense_store.dart';
 import '../utils/format.dart';
 import 'account_style_picker.dart';
@@ -13,9 +12,9 @@ import 'ui.dart';
 const kUnit = 64.0;
 
 /// Fixed top section: profile, balance and account switcher. Does not scroll.
+/// The gradient lives here only — the rest of the app is plain surface.
 class HomeHeader extends StatefulWidget {
   const HomeHeader({super.key, required this.store});
-
   final ExpenseStore store;
 
   @override
@@ -31,15 +30,26 @@ class _HomeHeaderState extends State<HomeHeader> {
     final store = widget.store;
     final many = store.accounts.length > 6;
     final rowHeight = many ? 180.0 : 96.0;
+    final scheme = Theme.of(context).colorScheme;
+    final topInset = MediaQuery.paddingOf(context).top;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [scheme.primary, scheme.tertiary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+      ),
+      // Gradient runs behind the status bar; content stays below it.
+      padding: EdgeInsets.fromLTRB(12, topInset + 8, 12, 14),
       child: Column(
         children: [
           _HeaderTop(store: store),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _HeaderBalance(store: store),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -76,13 +86,13 @@ class _HomeHeaderState extends State<HomeHeader> {
 
 class _HeaderTop extends StatelessWidget {
   const _HeaderTop({required this.store});
-
   final ExpenseStore store;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final on = Theme.of(context).colorScheme.onPrimary;
+
     return Row(
       children: [
         InkResponse(
@@ -94,28 +104,29 @@ class _HeaderTop extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [scheme.primary, scheme.tertiary],
-              ),
+              color: on.withValues(alpha: 0.2),
             ),
-            child: Icon(
-              Icons.person_rounded,
-              color: scheme.onPrimary,
-              size: 22,
-            ),
+            child: Icon(Icons.person_rounded, color: on, size: 22),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
             'Expenses',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleLarge?.copyWith(
+              color: on,
               fontWeight: FontWeight.w800,
             ),
           ),
         ),
         FilledButton.tonalIcon(
-          style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+          style: FilledButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            backgroundColor: on.withValues(alpha: 0.2),
+            foregroundColor: on,
+          ),
           onPressed: () => showAccountEditor(context, store),
           icon: const Icon(Icons.add_rounded, size: 18),
           label: const Text('Add account'),
@@ -127,32 +138,21 @@ class _HeaderTop extends StatelessWidget {
 
 class _HeaderBalance extends StatelessWidget {
   const _HeaderBalance({required this.store});
-
   final ExpenseStore store;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final on = scheme.onPrimary;
+    final on = Theme.of(context).colorScheme.onPrimary;
 
     return Pressable(
       onTap: () => openAccounts(context, store),
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [scheme.primary, scheme.tertiary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          // Soft glass panel on top of the header gradient.
+          color: on.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: scheme.primary.withValues(alpha: 0.25),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          border: Border.all(color: on.withValues(alpha: 0.15)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,7 +293,7 @@ class _HeaderAccounts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final on = Theme.of(context).colorScheme.onPrimary;
     final focusId = store.focusAccount?.id;
 
     void pick(String? id) {
@@ -309,12 +309,8 @@ class _HeaderAccounts extends StatelessWidget {
           onTap: () => pick(null),
           child: CircleAvatar(
             radius: 22,
-            backgroundColor: scheme.primaryContainer,
-            child: Icon(
-              Icons.dashboard_rounded,
-              size: 20,
-              color: scheme.onPrimaryContainer,
-            ),
+            backgroundColor: on.withValues(alpha: 0.2),
+            child: Icon(Icons.dashboard_rounded, size: 20, color: on),
           ),
         ),
       for (final a in store.accounts)
@@ -322,7 +318,14 @@ class _HeaderAccounts extends StatelessWidget {
           label: a.name,
           selected: focusId == a.id,
           onTap: () => pick(a.id),
-          child: AccountAvatar(styleKey: a.styleKey, radius: 22),
+          child: Container(
+            // White backing so the account's own colour stays readable.
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+            ),
+            child: AccountAvatar(styleKey: a.styleKey, radius: 22),
+          ),
         ),
     ];
 
@@ -359,11 +362,9 @@ class _HeaderAccounts extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
+            color: on.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.4),
-            ),
+            border: Border.all(color: on.withValues(alpha: 0.15)),
           ),
           child: Row(
             children: [
@@ -373,7 +374,7 @@ class _HeaderAccounts extends StatelessWidget {
                   tooltip: 'Close',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => onExpanded(false),
-                  icon: const Icon(Icons.close_rounded, size: 20),
+                  icon: Icon(Icons.close_rounded, size: 20, color: on),
                 ),
             ],
           ),
@@ -398,7 +399,8 @@ class _HeaderAccount extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final on = Theme.of(context).colorScheme.onPrimary;
+
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Pressable(
@@ -415,7 +417,7 @@ class _HeaderAccount extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: selected ? scheme.primary : Colors.transparent,
+                    color: selected ? on : Colors.transparent,
                     width: 2.5,
                   ),
                 ),
@@ -430,6 +432,7 @@ class _HeaderAccount extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: on,
                 ),
               ),
             ],
@@ -442,37 +445,31 @@ class _HeaderAccount extends StatelessWidget {
 
 class _HeaderTransfer extends StatelessWidget {
   const _HeaderTransfer({required this.store});
-
   final ExpenseStore store;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final on = theme.colorScheme.onPrimary;
     final canMove = store.accounts.length > 1;
+
     return Pressable(
       onTap: () =>
           canMove ? openTransfer(context, store) : openAccounts(context, store),
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
+          color: on.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.4),
-          ),
+          border: Border.all(color: on.withValues(alpha: 0.15)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             CircleAvatar(
               radius: 18,
-              backgroundColor: scheme.primary.withValues(alpha: 0.16),
-              child: Icon(
-                Icons.swap_horiz_rounded,
-                size: 20,
-                color: scheme.primary,
-              ),
+              backgroundColor: on.withValues(alpha: 0.2),
+              child: Icon(Icons.swap_horiz_rounded, size: 20, color: on),
             ),
             const SizedBox(height: 4),
             Text(
@@ -480,6 +477,7 @@ class _HeaderTransfer extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 2,
               style: theme.textTheme.labelMedium?.copyWith(
+                color: on,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -491,9 +489,9 @@ class _HeaderTransfer extends StatelessWidget {
 }
 
 /// Scrolling part under the header: month switcher and transactions.
+/// Plain surface — no gradient here.
 class HomeBody extends StatelessWidget {
   const HomeBody({super.key, required this.store});
-
   final ExpenseStore store;
 
   @override
@@ -503,7 +501,7 @@ class HomeBody extends StatelessWidget {
     final txs = store.monthTransactions;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 130),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -553,7 +551,6 @@ class HomeBody extends StatelessWidget {
 
 class _MonthBar extends StatelessWidget {
   const _MonthBar({required this.store});
-
   final ExpenseStore store;
 
   Future<void> _pick(BuildContext context) async {
@@ -570,6 +567,7 @@ class _MonthBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
@@ -588,6 +586,8 @@ class _MonthBar extends StatelessWidget {
             child: Center(
               child: Text(
                 DateFormat('MMMM yyyy').format(store.month),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
@@ -612,12 +612,12 @@ class _MonthBar extends StatelessWidget {
 
 class _Welcome extends StatelessWidget {
   const _Welcome({required this.store});
-
   final ExpenseStore store;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -628,7 +628,7 @@ class _Welcome extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Let’s set up your money',
+            'Let\'s set up your money',
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w800,
             ),
