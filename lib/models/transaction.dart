@@ -12,7 +12,6 @@ enum Category {
   other('Other', Icons.category_rounded, Color(0xFF90A4AE));
 
   const Category(this.label, this.icon, this.color);
-
   final String label;
   final IconData icon;
   final Color color;
@@ -33,25 +32,16 @@ class Transaction {
 
   final String id;
   final String title;
-
-  /// Stored in paise (1/100 rupee) to avoid floating-point rounding errors.
   final int amountPaise;
   final TxType type;
   final Category category;
   final DateTime date;
-
-  /// Account the money leaves (spent, transfer source) or arrives in (received).
   final String accountId;
-
-  /// Transfers only: the account receiving the money.
   final String? toAccountId;
-
-  /// Custom name when the category is Other.
   final String? customLabel;
 
   bool get isTransfer => type == TxType.transfer;
 
-  /// Name used for grouping in reports. "Other" uses the custom name when given.
   String get groupLabel {
     final custom = customLabel?.trim();
     if (category == Category.other && custom != null && custom.isNotEmpty) {
@@ -72,15 +62,25 @@ class Transaction {
     if (customLabel != null) 'customLabel': customLabel,
   };
 
+  /// Never throws: unknown values fall back instead of destroying the list.
   factory Transaction.fromJson(Map<String, dynamic> json) => Transaction(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    amountPaise: json['amountPaise'] as int,
-    type: TxType.values.byName(json['type'] as String),
-    category: Category.values.byName(json['category'] as String),
-    date: DateTime.parse(json['date'] as String),
-    accountId: (json['accountId'] as String?) ?? '',
-    toAccountId: json['toAccountId'] as String?,
-    customLabel: json['customLabel'] as String?,
+    id: (json['id'] ?? '').toString(),
+    title: (json['title'] ?? 'Untitled').toString(),
+    amountPaise: _toInt(json['amountPaise']),
+    type: TxType.values.firstWhere(
+      (e) => e.name == json['type'],
+      orElse: () => TxType.expense,
+    ),
+    category: Category.values.firstWhere(
+      (e) => e.name == json['category'],
+      orElse: () => Category.other,
+    ),
+    date: DateTime.tryParse('${json['date']}') ?? DateTime.now(),
+    accountId: (json['accountId'] ?? '').toString(),
+    toAccountId: json['toAccountId']?.toString(),
+    customLabel: json['customLabel']?.toString(),
   );
+
+  static int _toInt(Object? v) =>
+      v is num ? v.round() : int.tryParse('$v') ?? 0;
 }

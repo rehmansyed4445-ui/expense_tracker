@@ -3,8 +3,10 @@ import 'screens/home_screen.dart';
 import 'services/storage.dart';
 import 'state/expense_store.dart';
 
-void main() {
-  final store = ExpenseStore(TransactionStorage())..load();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final store = ExpenseStore(TransactionStorage());
+  await store.load(); // never race the first save against the load
   runApp(ExpenseApp(store: store));
 }
 
@@ -21,7 +23,6 @@ class ExpenseApp extends StatelessWidget {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
-      // FIXED: Your Flutter version requires CardThemeData, not CardTheme.
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

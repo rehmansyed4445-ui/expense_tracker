@@ -27,11 +27,16 @@ class Upcoming {
   };
 
   factory Upcoming.fromJson(Map<String, dynamic> json) => Upcoming(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    amountPaise: json['amountPaise'] as int,
-    dueDate: DateTime.parse(json['dueDate'] as String),
-    accountId: json['accountId'] as String,
-    category: Category.values.byName(json['category'] as String),
+    id: (json['id'] ?? '').toString(),
+    title: (json['title'] ?? 'Payment').toString(),
+    amountPaise: json['amountPaise'] is num
+        ? (json['amountPaise'] as num).round()
+        : int.tryParse('${json['amountPaise']}') ?? 0,
+    dueDate: DateTime.tryParse('${json['dueDate']}') ?? DateTime.now(),
+    accountId: (json['accountId'] ?? '').toString(),
+    category: Category.values.firstWhere(
+      (e) => e.name == json['category'],
+      orElse: () => Category.bills,
+    ),
   );
 }
