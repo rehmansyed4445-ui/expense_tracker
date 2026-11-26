@@ -32,12 +32,20 @@ class Transaction {
 
   final String id;
   final String title;
+
+  /// Stored in paise (1/100 rupee) to avoid floating-point rounding errors.
   final int amountPaise;
   final TxType type;
   final Category category;
   final DateTime date;
+
+  /// Account the money leaves (spent, transfer source) or arrives in (received).
   final String accountId;
+
+  /// Transfers only: the account receiving the money.
   final String? toAccountId;
+
+  /// Custom name when the category is Other.
   final String? customLabel;
 
   bool get isTransfer => type == TxType.transfer;
@@ -62,7 +70,6 @@ class Transaction {
     if (customLabel != null) 'customLabel': customLabel,
   };
 
-  /// Never throws: unknown values fall back instead of destroying the list.
   factory Transaction.fromJson(Map<String, dynamic> json) => Transaction(
     id: (json['id'] ?? '').toString(),
     title: (json['title'] ?? 'Untitled').toString(),

@@ -29,9 +29,7 @@ class Upcoming {
   factory Upcoming.fromJson(Map<String, dynamic> json) => Upcoming(
     id: (json['id'] ?? '').toString(),
     title: (json['title'] ?? 'Payment').toString(),
-    amountPaise: json['amountPaise'] is num
-        ? (json['amountPaise'] as num).round()
-        : int.tryParse('${json['amountPaise']}') ?? 0,
+    amountPaise: _toInt(json['amountPaise']),
     dueDate: DateTime.tryParse('${json['dueDate']}') ?? DateTime.now(),
     accountId: (json['accountId'] ?? '').toString(),
     category: Category.values.firstWhere(
@@ -39,4 +37,7 @@ class Upcoming {
       orElse: () => Category.bills,
     ),
   );
+
+  static int _toInt(Object? v) =>
+      v is num ? v.round() : int.tryParse('$v') ?? 0;
 }

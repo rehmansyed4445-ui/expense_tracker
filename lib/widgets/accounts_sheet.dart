@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../models/account.dart';
 import '../state/expense_store.dart';
 import '../utils/format.dart';
@@ -9,7 +8,6 @@ import 'ui.dart';
 
 class AccountsSheet extends StatelessWidget {
   const AccountsSheet({super.key, required this.store});
-
   final ExpenseStore store;
 
   @override
@@ -114,6 +112,7 @@ class AccountsSheet extends StatelessWidget {
                       Navigator.pop(context);
                     },
                     onEdit: () => showAccountEditor(context, store, a),
+                    onDelete: () => confirmDeleteAccount(context, store, a),
                   ),
                 ),
             ],
@@ -123,7 +122,7 @@ class AccountsSheet extends StatelessWidget {
     );
   }
 
-  /// Current balance in the current month, and the balance at month end for past months.
+  /// Current balance now, or the balance at month end for past months.
   int amountFor(Account a) => store.isCurrentMonth
       ? store.balanceNow(a.id)
       : store.balanceAt(a.id, store.monthEnd);
@@ -146,6 +145,7 @@ class _AccountRow extends StatelessWidget {
     required this.onTap,
     this.subtitleIsAccent = false,
     this.onEdit,
+    this.onDelete,
   });
 
   final bool selected;
@@ -156,11 +156,13 @@ class _AccountRow extends StatelessWidget {
   final VoidCallback onTap;
   final bool subtitleIsAccent;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final hasMenu = onEdit != null || onDelete != null;
 
     return Material(
       color: selected
@@ -171,7 +173,7 @@ class _AccountRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
           child: Row(
             children: [
               leading,
@@ -190,6 +192,8 @@ class _AccountRow extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: subtitleIsAccent
                             ? scheme.tertiary
@@ -202,17 +206,49 @@ class _AccountRow extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 formatRupees(amountPaise / 100),
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              if (onEdit != null)
-                IconButton(
-                  tooltip: 'Edit account',
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined),
+              if (hasMenu)
+                PopupMenuButton<String>(
+                  tooltip: 'Account options',
+                  icon: const Icon(Icons.more_vert_rounded),
+                  onSelected: (v) {
+                    if (v == 'edit') onEdit?.call();
+                    if (v == 'delete') onDelete?.call();
+                  },
+                  itemBuilder: (_) => [
+                    if (onEdit != null)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Edit'),
+                        ),
+                      ),
+                    if (onDelete != null)
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.delete_outline_rounded,
+                            color: scheme.error,
+                          ),
+                          title: Text(
+                            'Delete',
+                            style: TextStyle(color: scheme.error),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
             ],
           ),
@@ -222,7 +258,173 @@ class _AccountRow extends StatelessWidget {
   }
 }
 
-/// Add or edit an account: name, current balance and style.
+// ---------- Delete with preview + undo ----------
+
+Future<void> confirmDeleteAccount(
+  BuildContext context,
+  ExpenseStore store,
+  Account account,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (_) => _DeleteAccountDialog(
+      name: account.name,
+      balancePaise: store.balanceNow(account.id),
+      transactionCount: store.transactionCountFor(account.id),
+      upcomingCount: store.upcomingCountFor(account.id),
+      hasTransfers: store.hasTransfersFor(account.id),
+      isLast: store.accounts.length == 1,
+    ),
+  );
+
+  if (confirmed != true || !context.mounted) return;
+
+  final bundle = await store.deleteAccount(account.id);
+  if (bundle == null || !context.mounted) return;
+
+  showAppToast(
+    context,
+    message: 'Deleted "${account.name}"',
+    actionLabel: 'Undo',
+    onAction: () => store.restoreAccount(bundle),
+  );
+}
+
+class _DeleteAccountDialog extends StatelessWidget {
+  const _DeleteAccountDialog({
+    required this.name,
+    required this.balancePaise,
+    required this.transactionCount,
+    required this.upcomingCount,
+    required this.hasTransfers,
+    required this.isLast,
+  });
+
+  final String name;
+  final int balancePaise;
+  final int transactionCount;
+  final int upcomingCount;
+  final bool hasTransfers;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return AppDialog(
+      title: 'Delete $name?',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Current balance ${formatRupees(balancePaise / 100)}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _line(
+            scheme,
+            transactionCount == 0
+                ? 'No transactions to remove.'
+                : '$transactionCount '
+                      '${transactionCount == 1 ? 'transaction' : 'transactions'} '
+                      'will be deleted.',
+          ),
+          if (upcomingCount > 0)
+            _line(
+              scheme,
+              '$upcomingCount upcoming '
+              '${upcomingCount == 1 ? 'payment' : 'payments'} will be deleted.',
+            ),
+          if (hasTransfers) ...[
+            const SizedBox(height: 12),
+            _warning(
+              scheme,
+              'Transfers involving this account will also be removed. '
+              'The balance of the other account will change.',
+            ),
+          ],
+          if (isLast) ...[
+            const SizedBox(height: 12),
+            _warning(
+              scheme,
+              'This is your only account. Deleting it clears your whole '
+              'history and you will start fresh.',
+            ),
+          ],
+          const SizedBox(height: 14),
+          Text(
+            'You can undo this from the toast right after.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
+          ),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Delete'),
+        ),
+      ],
+    );
+  }
+
+  Widget _line(ColorScheme scheme, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.remove_circle_outline_rounded,
+          size: 16,
+          color: scheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text)),
+      ],
+    ),
+  );
+
+  Widget _warning(ColorScheme scheme, String text) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: scheme.errorContainer.withValues(alpha: 0.45),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.warning_amber_rounded,
+          size: 18,
+          color: scheme.onErrorContainer,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ---------- Add or edit an account ----------
+
 Future<void> showAccountEditor(
   BuildContext context,
   ExpenseStore store, [
@@ -236,7 +438,6 @@ Future<void> showAccountEditor(
 
 class _AccountEditor extends StatefulWidget {
   const _AccountEditor({required this.store, this.account});
-
   final ExpenseStore store;
   final Account? account;
 

@@ -20,10 +20,14 @@ class Account {
     'styleKey': styleKey,
   };
 
+  /// Never throws: unknown or missing values fall back to safe defaults.
   factory Account.fromJson(Map<String, dynamic> json) => Account(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    startingPaise: json['startingPaise'] as int,
-    styleKey: (json['styleKey'] as String?) ?? 'bank',
+    id: (json['id'] ?? '').toString(),
+    name: (json['name'] ?? 'Account').toString(),
+    startingPaise: _toInt(json['startingPaise']),
+    styleKey: (json['styleKey'] ?? 'bank').toString(),
   );
+
+  static int _toInt(Object? v) =>
+      v is num ? v.round() : int.tryParse('$v') ?? 0;
 }

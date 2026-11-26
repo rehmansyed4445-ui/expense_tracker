@@ -5,8 +5,13 @@ import 'state/expense_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final store = ExpenseStore(TransactionStorage());
-  await store.load(); // never race the first save against the load
+
+  final storage = TransactionStorage();
+  await storage.migrateFromPrefsIfNeeded(); // one-time, safe, idempotent
+
+  final store = ExpenseStore(storage);
+  await store.load(); // finish reading before the UI starts
+
   runApp(ExpenseApp(store: store));
 }
 

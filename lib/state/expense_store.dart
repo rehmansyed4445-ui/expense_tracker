@@ -17,6 +17,19 @@ class SpendGroup {
   final int paise;
 }
 
+/// Everything needed to undo an account deletion.
+class DeletedAccountBundle {
+  const DeletedAccountBundle({
+    required this.account,
+    required this.transactions,
+    required this.upcoming,
+  });
+
+  final Account account;
+  final List<Transaction> transactions;
+  final List<Upcoming> upcoming;
+}
+
 /// Single source of truth. Widgets listen to it and rebuild.
 class ExpenseStore extends ChangeNotifier {
   ExpenseStore(this._storage);
@@ -186,6 +199,59 @@ class ExpenseStore extends ChangeNotifier {
     );
     notifyListeners();
     await _persistAccounts();
+  }
+
+  // ---------- Deleting accounts ----------
+
+  int transactionCountFor(String accountId) => _all
+      .where((t) => t.accountId == accountId || t.toAccountId == accountId)
+      .length;
+
+  int upcomingCountFor(String accountId) =>
+      _upcoming.where((u) => u.accountId == accountId).length;
+
+  bool hasTransfersFor(String accountId) => _all.any(
+    (t) =>
+        t.isTransfer &&
+        (t.accountId == accountId || t.toAccountId == accountId),
+  );
+
+  /// Deletes the account plus its transactions and upcoming payments.
+  /// Returns a bundle so the caller can offer Undo.
+  Future<DeletedAccountBundle?> deleteAccount(String id) async {
+    final account = _accountById(id);
+    if (account == null) return null;
+
+    final bundle = DeletedAccountBundle(
+      account: account,
+      transactions: _all
+          .where((t) => t.accountId == id || t.toAccountId == id)
+          .toList(),
+      upcoming: _upcoming.where((u) => u.accountId == id).toList(),
+    );
+
+    _accounts.removeWhere((a) => a.id == id);
+    _all.removeWhere((t) => t.accountId == id || t.toAccountId == id);
+    _upcoming.removeWhere((u) => u.accountId == id);
+    if (_selectedAccountId == id) _selectedAccountId = null;
+    notifyListeners();
+
+    await _storage.deleteAccountCascade(id);
+    return bundle;
+  }
+
+  Future<void> restoreAccount(DeletedAccountBundle bundle) async {
+    _accounts.add(bundle.account);
+    _all.addAll(bundle.transactions);
+    _upcoming.addAll(bundle.upcoming);
+    _sortNewestFirst();
+    notifyListeners();
+
+    await _storage.restoreAccountBundle(
+      account: bundle.account,
+      transactions: bundle.transactions,
+      upcoming: bundle.upcoming,
+    );
   }
 
   // ---------- Month and totals ----------
