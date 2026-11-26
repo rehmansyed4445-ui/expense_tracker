@@ -208,7 +208,6 @@ class _PaidFromSheetState extends State<_PaidFromSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final u = widget.upcoming;
     return SheetFrame(
       title: 'Paid from',

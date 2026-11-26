@@ -5,7 +5,6 @@ import '../models/account_style.dart';
 import '../models/transaction.dart';
 import '../state/expense_store.dart';
 import '../utils/format.dart';
-import 'account_style_picker.dart';
 import 'ui.dart';
 
 class AddTransactionSheet extends StatefulWidget {
@@ -44,7 +43,9 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
     super.initState();
     final e = widget.existing;
     final store = widget.store;
-    final defaultAccount = store.focusAccount?.id ?? store.accounts.first.id;
+    final defaultAccount =
+        store.focusAccount?.id ??
+        (store.accounts.isEmpty ? '' : store.accounts.first.id);
     final storedId = e?.accountId ?? '';
 
     _type = e?.type ?? widget.initialType;
@@ -98,6 +99,8 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   }
 
   bool get _canSave {
+    if (_accountId.isEmpty) return false;
+    if (!widget.store.accounts.any((a) => a.id == _accountId)) return false;
     if (_type == TxType.transfer) {
       return widget.store.accounts.length > 1 &&
           _toAccountId != null &&
@@ -191,6 +194,14 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
               onSelectionChanged: (s) => setState(() => _type = s.first),
             ),
             const SizedBox(height: 16),
+            if (store.accounts.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Add an account first to log a transaction.',
+                  style: TextStyle(color: scheme.error, fontSize: 12),
+                ),
+              ),
             TextFormField(
               controller: _amountController,
               autofocus: !_isEdit,

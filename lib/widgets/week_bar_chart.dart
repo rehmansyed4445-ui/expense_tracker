@@ -32,7 +32,7 @@ class WeekBarChart extends StatelessWidget {
                       tween: Tween(end: t.expensePaise / maxValue),
                       duration: const Duration(milliseconds: 600),
                       curve: Curves.easeOutBack,
-                      builder: (_, fraction, __) {
+                      builder: (_, fraction, _) {
                         final isToday = i == totals.length - 1;
                         return Container(
                           height: 4 + 100 * fraction,
