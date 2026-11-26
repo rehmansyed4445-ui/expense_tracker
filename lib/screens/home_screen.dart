@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/transaction.dart';
 import '../models/upcoming.dart';
 import '../state/expense_store.dart';
@@ -7,11 +8,11 @@ import '../widgets/budgets.dart';
 import '../widgets/premium_bottom_bar.dart';
 import '../widgets/profile_drawer.dart';
 import '../widgets/quick_add.dart';
+import '../widgets/ui.dart';
 import '../widgets/upcoming_sheet.dart';
 import 'dashboard_view.dart';
 import 'reports_view.dart';
 
-/// Home and Reports sit side by side and follow the finger.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.store});
   final ExpenseStore store;
@@ -24,18 +25,44 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  /// 0 = Home, 1 = Reports.
   late final AnimationController _pos = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 320),
   );
   double _width = 1;
   final Set<String> _dismissed = {};
+  DateTime? _lastBackAt;
 
   @override
   void dispose() {
     _pos.dispose();
     super.dispose();
+  }
+
+  /// Back button priority: drawer -> Reports -> exit on second press.
+  Future<void> _onBackInvoked(bool didPop) async {
+    if (didPop) return;
+
+    final scaffold = _scaffoldKey.currentState;
+    if (scaffold != null && scaffold.isDrawerOpen) {
+      scaffold.closeDrawer();
+      return;
+    }
+    if (_pos.value > 0.5) {
+      _goTo(0);
+      return;
+    }
+
+    final now = DateTime.now();
+    final last = _lastBackAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+      _lastBackAt = null;
+      await SystemNavigator.pop();
+      return;
+    }
+    _lastBackAt = now;
+    if (!mounted) return;
+    showAppToast(context, message: 'Press back again to exit');
   }
 
   void _goTo(int i) {
@@ -54,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _onDragEnd(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
-    // Right swipe on Home opens the profile drawer.
     if (_pos.value <= 0 && v > 300) {
       _scaffoldKey.currentState?.openDrawer();
       _goTo(0);
@@ -69,7 +95,6 @@ class _HomeScreenState extends State<HomeScreen>
     _goTo(target);
   }
 
-  /// First upcoming payment due within 3 days that the user hasn't closed.
   Upcoming? _dueSoon(ExpenseStore store) {
     final limit = DateTime.now().add(const Duration(days: 3));
     for (final u in store.upcoming) {
@@ -89,106 +114,113 @@ class _HomeScreenState extends State<HomeScreen>
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return Scaffold(
-          key: _scaffoldKey,
-          // Plain, clean background. No dotted backdrop anywhere.
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          drawer: ProfileDrawer(
-            store: store,
-            hostContext: context,
-            onOpenReports: () => _goTo(1),
-          ),
-          body: Stack(
-            children: [
-              LayoutBuilder(
-                builder: (context, c) {
-                  _width = c.maxWidth;
-                  return GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragStart: _onDragStart,
-                    onHorizontalDragUpdate: _onDragUpdate,
-                    onHorizontalDragEnd: _onDragEnd,
-                    child: ClipRect(
-                      child: AnimatedBuilder(
-                        animation: _pos,
-                        builder: (context, _) {
-                          final t = _pos.value.clamp(0.0, 1.0).toDouble();
-                          final w = _width;
-                          return Stack(
-                            children: [
-                              // FIXED: This was a duplicate ReportsView before.
-                              Positioned.fill(
-                                child: Transform.translate(
-                                  offset: Offset(-t * w, 0),
-                                  child: DashboardView(
-                                    store: store,
-                                    onOpenReports: () => _goTo(1),
-                                  ),
-                                ),
-                              ),
-                              Positioned.fill(
-                                child: Transform.translate(
-                                  offset: Offset((1 - t) * w, 0),
-                                  child: SafeArea(
-                                    bottom: false,
-                                    child: Column(
-                                      children: [
-                                        _ReportsTopBar(onBack: () => _goTo(0)),
-                                        Expanded(
-                                          child: ReportsView(store: store),
-                                        ),
-                                      ],
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            _onBackInvoked(didPop);
+          },
+          child: Scaffold(
+            key: _scaffoldKey,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            drawer: ProfileDrawer(
+              store: store,
+              hostContext: context,
+              onOpenReports: () => _goTo(1),
+            ),
+            body: Stack(
+              children: [
+                LayoutBuilder(
+                  builder: (context, c) {
+                    _width = c.maxWidth;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onHorizontalDragStart: _onDragStart,
+                      onHorizontalDragUpdate: _onDragUpdate,
+                      onHorizontalDragEnd: _onDragEnd,
+                      child: ClipRect(
+                        child: AnimatedBuilder(
+                          animation: _pos,
+                          builder: (context, _) {
+                            final t = _pos.value.clamp(0.0, 1.0).toDouble();
+                            final w = _width;
+                            return Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: Transform.translate(
+                                    offset: Offset(-t * w, 0),
+                                    child: DashboardView(
+                                      store: store,
+                                      onOpenReports: () => _goTo(1),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: AnimatedBuilder(
-                  animation: _pos,
-                  builder: (context, _) {
-                    final due = _dueSoon(store);
-                    return SafeArea(
-                      top: false,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (due != null)
-                            NoticeBubble(
-                              text:
-                                  '${due.title} is due ${formatDay(due.dueDate)} · '
-                                  '${formatRupees(due.amountPaise / 100)}',
-                              onView: () => showUpcomingSheet(context, store),
-                              onClose: () =>
-                                  setState(() => _dismissed.add(due.id)),
-                            ),
-                          PremiumBottomBar(
-                            onHome: _pos.value <= 0.5,
-                            onSwitchView: _switchView,
-                            onSpent: () =>
-                                startAddFlow(context, store, TxType.expense),
-                            onReceived: () =>
-                                startAddFlow(context, store, TxType.income),
-                            onBudgets: () => showBudgetSheet(context, store),
-                            onUpcoming: () => showUpcomingSheet(context, store),
-                          ),
-                        ],
+                                Positioned.fill(
+                                  child: Transform.translate(
+                                    offset: Offset((1 - t) * w, 0),
+                                    child: SafeArea(
+                                      bottom: false,
+                                      child: Column(
+                                        children: [
+                                          _ReportsTopBar(
+                                            onBack: () => _goTo(0),
+                                          ),
+                                          Expanded(
+                                            child: ReportsView(store: store),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     );
                   },
                 ),
-              ),
-            ],
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: AnimatedBuilder(
+                    animation: _pos,
+                    builder: (context, _) {
+                      final due = _dueSoon(store);
+                      return SafeArea(
+                        top: false,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (due != null)
+                              NoticeBubble(
+                                text:
+                                    '${due.title} is due ${formatDay(due.dueDate)} · '
+                                    '${formatRupees(due.amountPaise / 100)}',
+                                onView: () => showUpcomingSheet(context, store),
+                                onClose: () =>
+                                    setState(() => _dismissed.add(due.id)),
+                              ),
+                            PremiumBottomBar(
+                              onHome: _pos.value <= 0.5,
+                              onSwitchView: _switchView,
+                              onSpent: () =>
+                                  startAddFlow(context, store, TxType.expense),
+                              onReceived: () =>
+                                  startAddFlow(context, store, TxType.income),
+                              onBudgets: () => showBudgetSheet(context, store),
+                              onUpcoming: () =>
+                                  showUpcomingSheet(context, store),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
