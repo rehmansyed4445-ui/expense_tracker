@@ -10,12 +10,16 @@ import '../widgets/profile_drawer.dart';
 import '../widgets/quick_add.dart';
 import '../widgets/ui.dart';
 import '../widgets/upcoming_sheet.dart';
+import '../services/auth_service.dart';
 import 'dashboard_view.dart';
 import 'reports_view.dart';
 
+import '../widgets/ruled_paper_background.dart';
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.store});
+  const HomeScreen({super.key, required this.store, required this.auth});
   final ExpenseStore store;
+  final AuthService auth;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -39,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  /// Back button priority: drawer -> Reports -> exit on second press.
   Future<void> _onBackInvoked(bool didPop) async {
     if (didPop) return;
 
@@ -124,102 +127,112 @@ class _HomeScreenState extends State<HomeScreen>
             backgroundColor: Theme.of(context).colorScheme.surface,
             drawer: ProfileDrawer(
               store: store,
+              auth: widget.auth, // Passes auth to the drawer for Sign Out
               hostContext: context,
               onOpenReports: () => _goTo(1),
             ),
-            body: Stack(
-              children: [
-                LayoutBuilder(
-                  builder: (context, c) {
-                    _width = c.maxWidth;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onHorizontalDragStart: _onDragStart,
-                      onHorizontalDragUpdate: _onDragUpdate,
-                      onHorizontalDragEnd: _onDragEnd,
-                      child: ClipRect(
-                        child: AnimatedBuilder(
-                          animation: _pos,
-                          builder: (context, _) {
-                            final t = _pos.value.clamp(0.0, 1.0).toDouble();
-                            final w = _width;
-                            return Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: Transform.translate(
-                                    offset: Offset(-t * w, 0),
-                                    child: DashboardView(
-                                      store: store,
-                                      onOpenReports: () => _goTo(1),
-                                    ),
-                                  ),
-                                ),
-                                Positioned.fill(
-                                  child: Transform.translate(
-                                    offset: Offset((1 - t) * w, 0),
-                                    child: SafeArea(
-                                      bottom: false,
-                                      child: Column(
-                                        children: [
-                                          _ReportsTopBar(
-                                            onBack: () => _goTo(0),
-                                          ),
-                                          Expanded(
-                                            child: ReportsView(store: store),
-                                          ),
-                                        ],
+            body: RuledPaperBackground(
+              child: Stack(
+                children: [
+                  LayoutBuilder(
+                    builder: (context, c) {
+                      _width = c.maxWidth;
+                      return GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragStart: _onDragStart,
+                        onHorizontalDragUpdate: _onDragUpdate,
+                        onHorizontalDragEnd: _onDragEnd,
+                        child: ClipRect(
+                          child: AnimatedBuilder(
+                            animation: _pos,
+                            builder: (context, _) {
+                              final t = _pos.value.clamp(0.0, 1.0).toDouble();
+                              final w = _width;
+                              return Stack(
+                                children: [
+                                  // Home Dashboard
+                                  Positioned.fill(
+                                    child: Transform.translate(
+                                      offset: Offset(-t * w, 0),
+                                      child: DashboardView(
+                                        store: store,
+                                        onOpenReports: () => _goTo(1),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: AnimatedBuilder(
-                    animation: _pos,
-                    builder: (context, _) {
-                      final due = _dueSoon(store);
-                      return SafeArea(
-                        top: false,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (due != null)
-                              NoticeBubble(
-                                text:
-                                    '${due.title} is due ${formatDay(due.dueDate)} · '
-                                    '${formatRupees(due.amountPaise / 100)}',
-                                onView: () => showUpcomingSheet(context, store),
-                                onClose: () =>
-                                    setState(() => _dismissed.add(due.id)),
-                              ),
-                            PremiumBottomBar(
-                              onHome: _pos.value <= 0.5,
-                              onSwitchView: _switchView,
-                              onSpent: () =>
-                                  startAddFlow(context, store, TxType.expense),
-                              onReceived: () =>
-                                  startAddFlow(context, store, TxType.income),
-                              onBudgets: () => showBudgetSheet(context, store),
-                              onUpcoming: () =>
-                                  showUpcomingSheet(context, store),
-                            ),
-                          ],
+                                  // Reports View
+                                  Positioned.fill(
+                                    child: Transform.translate(
+                                      offset: Offset((1 - t) * w, 0),
+                                      child: SafeArea(
+                                        bottom: false,
+                                        child: Column(
+                                          children: [
+                                            _ReportsTopBar(
+                                              onBack: () => _goTo(0),
+                                            ),
+                                            Expanded(
+                                              child: ReportsView(store: store),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
                         ),
                       );
                     },
                   ),
-                ),
-              ],
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: AnimatedBuilder(
+                      animation: _pos,
+                      builder: (context, _) {
+                        final due = _dueSoon(store);
+                        return SafeArea(
+                          top: false,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (due != null)
+                                NoticeBubble(
+                                  text:
+                                      '${due.title} is due ${formatDay(due.dueDate)} · '
+                                      '${formatRupees(due.amountPaise / 100)}',
+                                  onView: () =>
+                                      showUpcomingSheet(context, store),
+                                  onClose: () =>
+                                      setState(() => _dismissed.add(due.id)),
+                                ),
+                              PremiumBottomBar(
+                                onHome: _pos.value <= 0.5,
+                                onSwitchView: _switchView,
+                                onSpent: () => startAddFlow(
+                                  context,
+                                  store,
+                                  TxType.expense,
+                                ),
+                                onReceived: () =>
+                                    startAddFlow(context, store, TxType.income),
+                                onBudgets: () =>
+                                    showBudgetSheet(context, store),
+                                onUpcoming: () =>
+                                    showUpcomingSheet(context, store),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

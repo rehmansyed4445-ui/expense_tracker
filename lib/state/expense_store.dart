@@ -4,6 +4,11 @@ import '../models/transaction.dart';
 import '../models/upcoming.dart';
 import '../services/storage.dart';
 
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/backup_service.dart';
+import '../services/cloud_service.dart';
+
 class DayTotal {
   const DayTotal(this.day, this.expensePaise);
   final DateTime day;
@@ -34,6 +39,9 @@ class DeletedAccountBundle {
 class ExpenseStore extends ChangeNotifier {
   ExpenseStore(this._storage);
 
+  /// Exposed so Settings can build backups.
+  TransactionStorage get storage => _storage;
+
   final TransactionStorage _storage;
   static final DateTime _farFuture = DateTime(9999);
 
@@ -44,6 +52,151 @@ class ExpenseStore extends ChangeNotifier {
   bool _loaded = false;
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   String? _selectedAccountId;
+
+  // ---------- Cloud sync ----------
+  CloudService? _cloud;
+  Timer? _syncTimer;
+  bool _dirty = false;
+  bool _suppressSync = false;
+  bool _syncing = false;
+  String? _syncError;
+
+  DateTime? lastSyncedAt;
+
+  bool get syncing => _syncing;
+  String? get syncError => _syncError;
+  bool get cloudAttached => _cloud != null;
+
+  void attachCloud(CloudService cloud) => _cloud = cloud;
+
+  void detachCloud() {
+    _syncTimer?.cancel();
+    _cloud = null;
+  }
+
+  void _markDirty() {
+    if (_suppressSync) return;
+    _dirty = true;
+    if (_cloud == null) return;
+    _syncTimer?.cancel();
+    _syncTimer = Timer(const Duration(milliseconds: 1500), _pushToCloud);
+  }
+
+  BackupSnapshot _snapshot() => BackupSnapshot(
+    accounts: List.of(_accounts),
+    transactions: List.of(_all),
+    upcoming: List.of(_upcoming),
+    budgets: Map.of(_budgets),
+    exportedAt: DateTime.now(),
+  );
+
+  bool get _hasLocalData =>
+      _accounts.isNotEmpty ||
+      _all.isNotEmpty ||
+      _upcoming.isNotEmpty ||
+      _budgets.isNotEmpty;
+
+  Future<void> _rememberSyncTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'last_synced_at',
+      (lastSyncedAt ?? DateTime.now()).toIso8601String(),
+    );
+  }
+
+  Future<void> _pushToCloud() async {
+    final cloud = _cloud;
+    if (cloud == null || !_dirty) return;
+    _syncing = true;
+    _syncError = null;
+    notifyListeners();
+    try {
+      await cloud.push(_snapshot());
+      _dirty = false;
+      lastSyncedAt = DateTime.now();
+      await _rememberSyncTime();
+    } catch (e) {
+      _syncError = 'Sync failed';
+    } finally {
+      _syncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _restoreFromCloud(BackupSnapshot s) async {
+    _suppressSync = true;
+    try {
+      _accounts = List.of(s.accounts);
+      _all = List.of(s.transactions);
+      _upcoming = List.of(s.upcoming);
+      _budgets = Map.of(s.budgets);
+      if (_selectedAccountId != null &&
+          _accountById(_selectedAccountId!) == null) {
+        _selectedAccountId = null;
+      }
+      _sortNewestFirst();
+      notifyListeners();
+      await _storage.save(List.of(_all));
+      await _storage.saveAccounts(List.of(_accounts));
+      await _storage.saveUpcoming(List.of(_upcoming));
+      await _storage.saveBudgets(Map.of(_budgets));
+      _dirty = false;
+      lastSyncedAt = DateTime.now();
+      await _rememberSyncTime();
+    } finally {
+      _suppressSync = false;
+    }
+  }
+
+  /// Called after sign-in. Decides: pull cloud, push local, or keep both.
+  Future<String> reconcileWithCloud() async {
+    final cloud = _cloud;
+    if (cloud == null) return 'offline';
+    _syncing = true;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final remote = await cloud.pull();
+      if (remote == null) {
+        if (_hasLocalData) {
+          _dirty = true;
+          await _pushToCloud();
+          return 'pushed';
+        }
+        return 'empty';
+      }
+      if (!_hasLocalData) {
+        await _restoreFromCloud(remote);
+        return 'pulled';
+      }
+      final lastRaw = prefs.getString('last_synced_at');
+      final lastSynced = lastRaw == null ? null : DateTime.tryParse(lastRaw);
+      final remoteNewer =
+          lastSynced == null || remote.exportedAt.isAfter(lastSynced);
+      if (remoteNewer && !_dirty) {
+        await _restoreFromCloud(remote);
+        return 'pulled';
+      }
+      if (_dirty) {
+        await _pushToCloud();
+        return 'pushed';
+      }
+      return 'ok';
+    } catch (e) {
+      _syncError = 'Sync failed';
+      return 'error';
+    } finally {
+      _syncing = false;
+      notifyListeners();
+    }
+  }
+
+  /// Manual "Sync now" from Settings.
+  Future<void> syncNow() async {
+    if (_cloud == null) return;
+    _dirty = true;
+    await _pushToCloud();
+  }
 
   // ---------- Basics ----------
   bool get isLoaded => _loaded;
@@ -237,6 +390,7 @@ class ExpenseStore extends ChangeNotifier {
     notifyListeners();
 
     await _storage.deleteAccountCascade(id);
+    _markDirty();
     return bundle;
   }
 
@@ -252,6 +406,7 @@ class ExpenseStore extends ChangeNotifier {
       transactions: bundle.transactions,
       upcoming: bundle.upcoming,
     );
+    _markDirty();
   }
 
   // ---------- Month and totals ----------
@@ -357,6 +512,81 @@ class ExpenseStore extends ChangeNotifier {
     });
   }
 
+  // ---------- Backup / restore ----------
+
+  /// Re-reads everything from storage.
+  Future<void> reload() async {
+    try {
+      _all = await _storage.load();
+      _accounts = await _storage.loadAccounts();
+      _upcoming = await _storage.loadUpcoming();
+      _budgets = await _storage.loadBudgets();
+    } catch (e, s) {
+      debugPrint('Reload failed: $e\n$s');
+    }
+    final sel = _selectedAccountId;
+    if (sel != null && _accountById(sel) == null) _selectedAccountId = null;
+    _sortNewestFirst();
+    notifyListeners();
+  }
+
+  /// Replaces ALL data with a backup. One atomic write.
+  Future<void> replaceAllData({
+    required List<Account> accounts,
+    required List<Transaction> transactions,
+    required List<Upcoming> upcoming,
+    required Map<String, int> budgets,
+  }) async {
+    await _storage.replaceAllData(
+      accounts: accounts,
+      transactions: transactions,
+      upcoming: upcoming,
+      budgets: budgets,
+    );
+    _accounts = List.of(accounts);
+    _all = List.of(transactions);
+    _upcoming = List.of(upcoming);
+    _budgets = Map.of(budgets);
+    _selectedAccountId = null;
+    _sortNewestFirst();
+    notifyListeners();
+  }
+
+  // ---------- Search ----------
+
+  /// Searches every transaction in every month, inside the focused account.
+  List<Transaction> searchTransactions({
+    String query = '',
+    TxType? type,
+    Category? category,
+    bool monthOnly = false,
+  }) {
+    final q = query.trim().toLowerCase();
+    final parsed = double.tryParse(q);
+    final amountPaise = parsed == null ? null : (parsed * 100).round();
+
+    Iterable<Transaction> items = _all.where(_inScope);
+    if (type != null) items = items.where((t) => t.type == type);
+    if (category != null) items = items.where((t) => t.category == category);
+    if (monthOnly) items = items.where((t) => _sameMonth(t.date, _month));
+    if (q.isEmpty) return items.toList();
+
+    return items.where((t) {
+      if (t.title.toLowerCase().contains(q)) return true;
+      if (t.groupLabel.toLowerCase().contains(q)) return true;
+      if (amountPaise != null && t.amountPaise == amountPaise) return true;
+      final from = _accountById(t.accountId)?.name.toLowerCase() ?? '';
+      if (from.isNotEmpty && from.contains(q)) return true;
+      final to = _accountById(t.toAccountId ?? '')?.name.toLowerCase() ?? '';
+      if (to.isNotEmpty && to.contains(q)) return true;
+      return false;
+    }).toList();
+  }
+
+  /// Sum of one type across any list of transactions.
+  int sumType(TxType type, Iterable<Transaction> items) =>
+      _sumType(type, items);
+
   // ---------- Transactions ----------
   Future<void> add(Transaction t) async {
     _all.add(t);
@@ -446,14 +676,26 @@ class ExpenseStore extends ChangeNotifier {
     }
     notifyListeners();
     await _storage.saveBudgets(Map.of(_budgets));
+    _markDirty();
   }
 
   // ---------- Helpers ----------
   void _sortNewestFirst() => _all.sort((a, b) => b.date.compareTo(a.date));
 
-  Future<void> _persistTransactions() => _storage.save(List.of(_all));
-  Future<void> _persistAccounts() => _storage.saveAccounts(List.of(_accounts));
-  Future<void> _persistUpcoming() => _storage.saveUpcoming(List.of(_upcoming));
+  Future<void> _persistTransactions() async {
+    await _storage.save(List.of(_all));
+    _markDirty();
+  }
+
+  Future<void> _persistAccounts() async {
+    await _storage.saveAccounts(List.of(_accounts));
+    _markDirty();
+  }
+
+  Future<void> _persistUpcoming() async {
+    await _storage.saveUpcoming(List.of(_upcoming));
+    _markDirty();
+  }
 
   static bool _sameMonth(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month;

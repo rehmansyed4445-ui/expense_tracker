@@ -8,6 +8,8 @@ import 'quick_add.dart';
 import 'transaction_tile.dart';
 import 'ui.dart';
 
+import '../screens/search_screen.dart';
+
 const kUnit = 64.0;
 
 /// Gradient header: top bar, balance, account switcher. Nothing below it.
@@ -489,6 +491,7 @@ class _HeaderTransfer extends StatelessWidget {
 }
 
 /// Plain scrolling area under the gradient.
+/// Scrolling part under the header: month switcher, search, transactions.
 class HomeBody extends StatelessWidget {
   const HomeBody({super.key, required this.store});
   final ExpenseStore store;
@@ -504,8 +507,12 @@ class HomeBody extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(height: 52, child: _MonthBar(store: store)),
-          const SizedBox(height: 12),
+          SizedBox(height: 56, child: _MonthBar(store: store)),
+          const SizedBox(height: 10),
+          if (store.hasAccounts) ...[
+            _SearchBar(store: store),
+            const SizedBox(height: 14),
+          ],
           if (!store.hasAccounts)
             _Welcome(store: store)
           else ...[
@@ -543,6 +550,86 @@ class HomeBody extends StatelessWidget {
                 ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Premium search pill. Looks like a search field; opens the full search screen.
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({required this.store});
+  final ExpenseStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Pressable(
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => SearchScreen(store: store))),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [scheme.primary, scheme.tertiary],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.primary.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: scheme.onPrimary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Search your money…',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 22,
+              color: scheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 10),
+            Icon(
+              Icons.tune_rounded,
+              size: 20,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+          ],
+        ),
       ),
     );
   }

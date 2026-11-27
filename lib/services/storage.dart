@@ -277,6 +277,37 @@ class TransactionStorage {
         .toList(),
   );
 
+  /// Replaces every table in ONE transaction. Used by Restore.
+  Future<void> replaceAllData({
+    required List<Account> accounts,
+    required List<Transaction> transactions,
+    required List<Upcoming> upcoming,
+    required Map<String, int> budgets,
+  }) async {
+    final db = await _appDb.db;
+    await db.transaction((txn) async {
+      await txn.delete('transactions');
+      await txn.delete('upcoming');
+      await txn.delete('budgets');
+      await txn.delete('accounts');
+
+      final b = txn.batch();
+      for (final a in accounts) {
+        b.insert('accounts', _accountRow(a));
+      }
+      for (final t in transactions) {
+        b.insert('transactions', _txRow(t));
+      }
+      for (final u in upcoming) {
+        b.insert('upcoming', _upcomingRow(u));
+      }
+      budgets.forEach((label, paise) {
+        b.insert('budgets', {'label': label, 'amount_paise': paise});
+      });
+      await b.commit(noResult: true);
+    });
+  }
+
   /// Removes an account and everything referencing it in ONE transaction.
   Future<void> deleteAccountCascade(String accountId) async {
     final db = await _appDb.db;

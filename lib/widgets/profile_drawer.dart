@@ -1,166 +1,142 @@
 import 'package:flutter/material.dart';
-
 import '../state/expense_store.dart';
-import '../utils/format.dart';
-import 'quick_add.dart';
-import 'upcoming_sheet.dart';
-
-/// Round avatar in the Home header. Tapping it opens the drawer.
-class ProfileAvatarButton extends StatelessWidget {
-  const ProfileAvatarButton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkResponse(
-      onTap: () => Scaffold.of(context).openDrawer(),
-      radius: 28,
-      customBorder: const CircleBorder(),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(colors: [scheme.primary, scheme.tertiary]),
-        ),
-        child: Icon(Icons.person_rounded, color: scheme.onPrimary),
-      ),
-    );
-  }
-}
-
-class ScreenHeader extends StatelessWidget {
-  const ScreenHeader({super.key, required this.title, this.subtitle});
-
-  final String title;
-  final String? subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          if (subtitle != null)
-            Text(
-              subtitle!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
+import '../services/auth_service.dart';
+import '../screens/settings_screen.dart';
+import '../widgets/budgets.dart';
+import '../widgets/upcoming_sheet.dart';
 
 class ProfileDrawer extends StatelessWidget {
   const ProfileDrawer({
     super.key,
     required this.store,
+    required this.auth,
     required this.hostContext,
     required this.onOpenReports,
   });
 
   final ExpenseStore store;
-
-  /// Context of the home screen. Sheets open from here, because the drawer closes first.
+  final AuthService auth;
   final BuildContext hostContext;
   final VoidCallback onOpenReports;
 
-  void _run(BuildContext drawerContext, VoidCallback action) {
-    Navigator.of(drawerContext).pop();
-    action();
+  void _closeAndRun(VoidCallback action) {
+    Navigator.pop(hostContext); // Close drawer first
+    Future.delayed(const Duration(milliseconds: 300), () {
+      action(); // Then trigger the sign out/route change
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final count = store.accounts.length;
 
     return Drawer(
+      backgroundColor: scheme.surface,
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [scheme.primary, scheme.tertiary],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 32, left: 8),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: scheme.primaryContainer,
+                      child: Icon(
+                        auth.isGuest ? Icons.person_outline : Icons.person,
+                        color: scheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            auth.isGuest
+                                ? 'Guest User'
+                                : (auth.displayName ?? 'User'),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            auth.isGuest
+                                ? 'Local data only'
+                                : (auth.email ?? ''),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(24),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: scheme.onPrimary.withValues(alpha: 0.2),
-                    child: Icon(
-                      Icons.person_rounded,
-                      color: scheme.onPrimary,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    formatRupees(store.totalAllBalancePaise / 100),
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      color: scheme.onPrimary,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  Text(
-                    'Total across $count ${count == 1 ? 'account' : 'accounts'}',
-                    style: TextStyle(
-                      color: scheme.onPrimary.withValues(alpha: 0.85),
-                    ),
-                  ),
-                ],
+
+              _tile(
+                context,
+                icon: Icons.pie_chart_rounded,
+                title: 'Reports',
+                subtitle: 'Spending breakdown',
+                onTap: () => _closeAndRun(onOpenReports),
               ),
-            ),
-            const SizedBox(height: 12),
-            _tile(
-              context,
-              icon: Icons.account_balance_wallet_rounded,
-              title: 'Accounts & cash',
-              subtitle: 'Balances, cash and transfers',
-              onTap: () =>
-                  _run(context, () => openAccounts(hostContext, store)),
-            ),
-            _tile(
-              context,
-              icon: Icons.event_rounded,
-              title: 'Upcoming payments',
-              subtitle: 'Bills and EMIs to pay',
-              onTap: () =>
-                  _run(context, () => showUpcomingSheet(hostContext, store)),
-            ),
-            _tile(
-              context,
-              icon: Icons.bar_chart_rounded,
-              title: 'Reports',
-              subtitle: 'Charts and category details',
-              onTap: () => _run(context, onOpenReports),
-            ),
-            _tile(
-              context,
-              icon: Icons.settings_rounded,
-              title: 'Settings',
-              subtitle: 'Coming soon',
-              onTap: null,
-            ),
-          ],
+              _tile(
+                context,
+                icon: Icons.upcoming_rounded,
+                title: 'Upcoming',
+                subtitle: '${store.upcoming.length} payments',
+                onTap: () =>
+                    _closeAndRun(() => showUpcomingSheet(hostContext, store)),
+              ),
+              _tile(
+                context,
+                icon: Icons.track_changes_rounded,
+                title: 'Budgets',
+                subtitle: 'Monthly limits',
+                onTap: () =>
+                    _closeAndRun(() => showBudgetSheet(hostContext, store)),
+              ),
+
+              const Divider(height: 32),
+
+              _tile(
+                context,
+                icon: Icons.settings_rounded,
+                title: 'Settings',
+                subtitle: 'Backup, export and restore',
+                onTap: () =>
+                    _closeAndRun(() => openSettings(hostContext, store, auth)),
+              ),
+
+              const Spacer(),
+
+              if (auth.isGuest)
+                _tile(
+                  context,
+                  icon: Icons.login_rounded,
+                  title: 'Sign in to sync',
+                  subtitle: 'Save your data to the cloud',
+                  onTap: () => _closeAndRun(() => auth.signOut()),
+                )
+              else
+                _tile(
+                  context,
+                  icon: Icons.logout_rounded,
+                  title: 'Sign out',
+                  subtitle: auth.email ?? 'Your account',
+                  onTap: () => _closeAndRun(() => auth.signOut()),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -171,16 +147,50 @@ class ProfileDrawer extends StatelessWidget {
     required IconData icon,
     required String title,
     required String subtitle,
-    required VoidCallback? onTap,
+    required VoidCallback onTap,
   }) {
-    return ListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      leading: Icon(icon),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle),
-      trailing: onTap == null ? null : const Icon(Icons.chevron_right_rounded),
-      enabled: onTap != null,
-      onTap: onTap,
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Icon(icon, color: scheme.onSurfaceVariant, size: 22),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
