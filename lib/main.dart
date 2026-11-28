@@ -1,10 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'firebase_options.dart';
-import 'screens/home_screen.dart';
+import 'screens/session_gate.dart';
 import 'screens/sign_in_screen.dart';
 import 'services/auth_service.dart';
-import 'services/cloud_service.dart';
 import 'services/storage.dart';
 import 'state/expense_store.dart';
 
@@ -18,20 +17,10 @@ Future<void> main() async {
 
   final store = ExpenseStore(storage);
   await store.load();
+  await store.prepareSyncSafety();
 
   final auth = AuthService();
-  await auth.initialize(); // <--- CRITICAL: Wait for guest status to load!
-
-  // Attach Cloud Sync when the user signs in
-  auth.addListener(() async {
-    if (auth.isSignedIn && auth.uid != null) {
-      store.attachCloud(CloudService(auth.uid!));
-      final result = await store.reconcileWithCloud();
-      debugPrint('Cloud sync: $result');
-    } else {
-      store.detachCloud();
-    }
-  });
+  await auth.initialize();
 
   runApp(ExpenseApp(store: store, auth: auth));
 }
@@ -68,7 +57,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFFFFFDF5), // Cream background
+      scaffoldBackgroundColor: const Color(0xFFFFFDF5),
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -96,10 +85,9 @@ class _ExpenseAppState extends State<ExpenseApp> {
       title: 'Expenses',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(Brightness.light),
-      darkTheme: _buildTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: widget.auth.canAccessApp
-          ? HomeScreen(store: widget.store, auth: widget.auth)
+          ? SessionGate(store: widget.store, auth: widget.auth)
           : SignInScreen(auth: widget.auth),
     );
   }

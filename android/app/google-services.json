@@ -12,7 +12,20 @@
           "package_name": "com.example.expense_tracker"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "633221932298-hs370j2rbo59j169014fb2d750ur20jt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.expense_tracker",
+            "certificate_hash": "c5770a734de542d4a157382fe872fa4c966b4aa4"
+          }
+        },
+        {
+          "client_id": "633221932298-5i47meh5h9monf8efrgrqmtoba4hcgt3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA66W5BGybUfv0RELArHfG-NeL70bFQEp8"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "633221932298-5i47meh5h9monf8efrgrqmtoba4hcgt3.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "633221932298-4098aml9et0oghq9nm69oh0d5osuqkti.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.expenseTracker"
+              }
+            }
+          ]
         }
       }
     }

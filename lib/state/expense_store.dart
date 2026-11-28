@@ -54,18 +54,26 @@ class ExpenseStore extends ChangeNotifier {
   String? _selectedAccountId;
 
   // ---------- Cloud sync ----------
+  // ---------- Cloud sync ----------
   CloudService? _cloud;
   Timer? _syncTimer;
   bool _dirty = false;
   bool _suppressSync = false;
   bool _syncing = false;
   String? _syncError;
-
   DateTime? lastSyncedAt;
+
+  static const _kDirty = 'local_dirty';
+  static const _kTombstones = 'deleted_ids';
+  Set<String> _tombstones = {};
+  Set<String> _knownIds = {};
 
   bool get syncing => _syncing;
   String? get syncError => _syncError;
   bool get cloudAttached => _cloud != null;
+
+  /// Whether this device holds any data at all.
+  bool get hasAnyData => _hasLocalData;
 
   void attachCloud(CloudService cloud) => _cloud = cloud;
 
@@ -74,12 +82,57 @@ class ExpenseStore extends ChangeNotifier {
     _cloud = null;
   }
 
+  /// Call once from main() right after load().
+  /// Restores pending-change flag + deletion history that survive restarts.
+  Future<void> prepareSyncSafety() async {
+    final prefs = await SharedPreferences.getInstance();
+    _dirty = prefs.getBool(_kDirty) ?? false;
+    _tombstones = (prefs.getStringList(_kTombstones) ?? []).toSet();
+    _knownIds = _currentIds();
+  }
+
+  Set<String> _currentIds() => {
+    ..._all.map((t) => t.id),
+    ..._upcoming.map((u) => u.id),
+    ..._accounts.map((a) => a.id),
+    ..._budgets.keys.map((k) => 'budget:$k'),
+  };
+
+  Future<void> _persistTombstones() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = _tombstones.toList();
+    await prefs.setStringList(
+      _kTombstones,
+      list.length > 2000 ? list.sublist(list.length - 2000) : list,
+    );
+  }
+
+  /// Runs after every mutation. Diffs IDs to record deletions / undos.
   void _markDirty() {
     if (_suppressSync) return;
+
+    final current = _currentIds();
+    if (_knownIds.isNotEmpty) {
+      final removed = _knownIds.difference(current);
+      final restored = current.difference(_knownIds);
+      if (removed.isNotEmpty) _tombstones.addAll(removed);
+      if (restored.isNotEmpty) _tombstones.removeAll(restored);
+      if (removed.isNotEmpty || restored.isNotEmpty) _persistTombstones();
+    }
+    _knownIds = current;
+
     _dirty = true;
+    SharedPreferences.getInstance().then((p) => p.setBool(_kDirty, true));
+    _schedulePush();
+  }
+
+  void _schedulePush() {
     if (_cloud == null) return;
     _syncTimer?.cancel();
-    _syncTimer = Timer(const Duration(milliseconds: 1500), _pushToCloud);
+    _syncTimer = Timer(
+      const Duration(milliseconds: 1500),
+      () => _pushToCloud(),
+    );
   }
 
   BackupSnapshot _snapshot() => BackupSnapshot(
@@ -96,17 +149,36 @@ class ExpenseStore extends ChangeNotifier {
       _upcoming.isNotEmpty ||
       _budgets.isNotEmpty;
 
-  Future<void> _rememberSyncTime() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'last_synced_at',
-      (lastSyncedAt ?? DateTime.now()).toIso8601String(),
-    );
+  /// Union by id. Local wins a true conflict; tombstoned ids are dropped.
+  List<T> _mergeById<T>(
+    List<T> local,
+    List<T> remote,
+    String Function(T) idOf,
+  ) {
+    final map = <String, T>{};
+    for (final r in remote) {
+      map[idOf(r)] = r;
+    }
+    for (final l in local) {
+      map[idOf(l)] = l;
+    }
+    map.removeWhere((id, _) => _tombstones.contains(id));
+    return map.values.toList();
   }
 
-  Future<void> _pushToCloud() async {
+  Map<String, int> _mergeBudgets(
+    Map<String, int> local,
+    Map<String, int> remote,
+  ) {
+    final m = <String, int>{...remote, ...local};
+    m.removeWhere((k, _) => _tombstones.contains('budget:$k'));
+    return m;
+  }
+
+  Future<void> _pushToCloud({bool force = false}) async {
     final cloud = _cloud;
-    if (cloud == null || !_dirty) return;
+    if (cloud == null) return;
+    if (!force && !_dirty) return;
     _syncing = true;
     _syncError = null;
     notifyListeners();
@@ -114,7 +186,9 @@ class ExpenseStore extends ChangeNotifier {
       await cloud.push(_snapshot());
       _dirty = false;
       lastSyncedAt = DateTime.now();
-      await _rememberSyncTime();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kDirty, false);
+      await prefs.setString('last_synced_at', lastSyncedAt!.toIso8601String());
     } catch (e) {
       _syncError = 'Sync failed';
     } finally {
@@ -123,65 +197,73 @@ class ExpenseStore extends ChangeNotifier {
     }
   }
 
-  Future<void> _restoreFromCloud(BackupSnapshot s) async {
+  Future<void> _applyLocally(BackupSnapshot s) async {
     _suppressSync = true;
     try {
       _accounts = List.of(s.accounts);
       _all = List.of(s.transactions);
       _upcoming = List.of(s.upcoming);
       _budgets = Map.of(s.budgets);
-      if (_selectedAccountId != null &&
-          _accountById(_selectedAccountId!) == null) {
-        _selectedAccountId = null;
-      }
+      final sel = _selectedAccountId;
+      if (sel != null && _accountById(sel) == null) _selectedAccountId = null;
       _sortNewestFirst();
       notifyListeners();
-      await _storage.save(List.of(_all));
-      await _storage.saveAccounts(List.of(_accounts));
-      await _storage.saveUpcoming(List.of(_upcoming));
-      await _storage.saveBudgets(Map.of(_budgets));
+
+      await _storage.replaceAllData(
+        accounts: _accounts,
+        transactions: _all,
+        upcoming: _upcoming,
+        budgets: _budgets,
+      );
+
+      _knownIds = _currentIds();
       _dirty = false;
       lastSyncedAt = DateTime.now();
-      await _rememberSyncTime();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kDirty, false);
+      await prefs.setString('last_synced_at', lastSyncedAt!.toIso8601String());
     } finally {
       _suppressSync = false;
     }
   }
 
-  /// Called after sign-in. Decides: pull cloud, push local, or keep both.
+  /// Never loses data:
+  ///  - cloud empty  -> push local
+  ///  - local empty  -> pull cloud
+  ///  - both have data -> MERGE, then write both sides
   Future<String> reconcileWithCloud() async {
     final cloud = _cloud;
     if (cloud == null) return 'offline';
     _syncing = true;
+    _syncError = null;
     notifyListeners();
     try {
-      final prefs = await SharedPreferences.getInstance();
       final remote = await cloud.pull();
+
       if (remote == null) {
         if (_hasLocalData) {
-          _dirty = true;
-          await _pushToCloud();
+          await _pushToCloud(force: true);
           return 'pushed';
         }
         return 'empty';
       }
+
       if (!_hasLocalData) {
-        await _restoreFromCloud(remote);
+        await _applyLocally(remote);
         return 'pulled';
       }
-      final lastRaw = prefs.getString('last_synced_at');
-      final lastSynced = lastRaw == null ? null : DateTime.tryParse(lastRaw);
-      final remoteNewer =
-          lastSynced == null || remote.exportedAt.isAfter(lastSynced);
-      if (remoteNewer && !_dirty) {
-        await _restoreFromCloud(remote);
-        return 'pulled';
-      }
-      if (_dirty) {
-        await _pushToCloud();
-        return 'pushed';
-      }
-      return 'ok';
+
+      final merged = BackupSnapshot(
+        accounts: _mergeById(_accounts, remote.accounts, (a) => a.id),
+        transactions: _mergeById(_all, remote.transactions, (t) => t.id),
+        upcoming: _mergeById(_upcoming, remote.upcoming, (u) => u.id),
+        budgets: _mergeBudgets(_budgets, remote.budgets),
+        exportedAt: DateTime.now(),
+      );
+
+      await _applyLocally(merged);
+      await _pushToCloud(force: true);
+      return 'merged';
     } catch (e) {
       _syncError = 'Sync failed';
       return 'error';
@@ -194,8 +276,7 @@ class ExpenseStore extends ChangeNotifier {
   /// Manual "Sync now" from Settings.
   Future<void> syncNow() async {
     if (_cloud == null) return;
-    _dirty = true;
-    await _pushToCloud();
+    await _pushToCloud(force: true);
   }
 
   // ---------- Basics ----------
@@ -549,7 +630,18 @@ class ExpenseStore extends ChangeNotifier {
     _budgets = Map.of(budgets);
     _selectedAccountId = null;
     _sortNewestFirst();
+
+    // A manual restore is a fresh start: forget old deletions and
+    // overwrite the cloud with exactly this snapshot.
+    _tombstones.clear();
+    await _persistTombstones();
+    _knownIds = _currentIds();
+    _dirty = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kDirty, true);
+
     notifyListeners();
+    _schedulePush();
   }
 
   // ---------- Search ----------
